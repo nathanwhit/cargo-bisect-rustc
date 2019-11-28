@@ -15,7 +15,7 @@ use std::path::Path;
 use chrono::{DateTime, TimeZone, Utc};
 use failure::Error;
 use git2::build::RepoBuilder;
-use git2::{Commit as Git2Commit, Repository};
+use git2::{Commit as Git2Commit, Repository, Cred, CredentialType, RemoteCallbacks, FetchOptions, Error as Git2Error};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Commit {
@@ -53,7 +53,11 @@ fn get_repo() -> Result<Repository, Error> {
                 eprintln!("refreshing repository");
                 let mut remote = repo.find_remote("origin")
                     .or_else(|_| repo.remote_anonymous("origin"))?;
-                remote.fetch(&["master"], None, None)?;
+                let mut callbacks = RemoteCallbacks::new();
+                callbacks.credentials(credentials_callback);
+                let mut fetch_opts = FetchOptions::new();
+                fetch_opts.remote_callbacks(callbacks);
+                remote.fetch(&["master"], Some(&mut fetch_opts), None)?;
             }
             Ok(repo)
         }
@@ -63,6 +67,19 @@ fn get_repo() -> Result<Repository, Error> {
                 .bare(true)
                 .clone(RUST_SRC_URL, Path::new("rust.git"))?)
         }
+    }
+}
+
+fn credentials_callback(
+    _url: &str,
+    username_from_url: Option<&str>,
+    allowed_types: CredentialType
+) -> Result<Cred, Git2Error> {
+    if allowed_types.contains(CredentialType::SSH_KEY) {
+        let username = username_from_url.unwrap_or("git");
+        Cred::ssh_key_from_agent(username).or_else(|_| Cred::default())
+    } else {
+        Cred::default()
     }
 }
 
